@@ -26,3 +26,7 @@
 *.exe
 *.out
 *.app
+
+# Raw testcase
+testcase/
+

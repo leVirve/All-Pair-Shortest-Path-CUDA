@@ -5,7 +5,7 @@ const int INF = 10000000;
 const int V = 10010;
 
 void block_FW(int B);
-__global__ void cal(int* d_dist, int B, int Round, int block_start_x, int block_start_y, int n);
+__global__ void cal(int* d_dist, int B, int Round, int block_start_x, int block_start_y, int n, int k);
 
 int n, m, B;
 int *r_dist;
@@ -62,8 +62,9 @@ void launch_cal(
     if (!blk_x_sz || !blk_y_sz) return;
 
     dim3 block(blk_x_sz, blk_y_sz);
-    dim3 thread(B, B);
-    cal<<<block, thread>>>(device_dist, B, iter, blk_start_x, blk_start_y, n);
+    dim3 thread(B);
+    for (int k = iter * B, c = 0; c < B && k < n; ++k, ++c)
+        cal<<<block, thread>>>(device_dist, B, iter, blk_start_x, blk_start_y, n, k);
 }
 
 void block_FW(int B)
@@ -109,16 +110,17 @@ void block_FW(int B)
 }
 
 __global__
-void cal(int* dist, int B, int Round, int block_start_x, int block_start_y, int n)
+void cal(int* dist, int B, int Round, int block_start_x, int block_start_y, int n, int k)
 {
     int b_i = blockIdx.x + block_start_x,
         b_j = blockIdx.y + block_start_y,
         i = b_i * B + threadIdx.x,
-        j = b_j * B + threadIdx.y;
+        j = b_j * B,
+        j_end = j + B;
     if (i >= n) return;
-    if (j >= n) return;
+    if (j_end > n) j_end = n;
 
-    for (int k = Round * B; k < (Round + 1) * B && k < n; ++k) {
+    for (; j < j_end; ++j) {
         if (dist[i * n + k] + dist[k * n + j] < dist[i * n + j])
             dist[i * n + j] = dist[i * n + k] + dist[k * n + j];
     }

@@ -7,7 +7,7 @@ const int V = 10010;
 void block_FW(int B);
 __global__ void cal(int* d_dist, int B, int Round, int block_start_x, int block_start_y, int n);
 
-int n, m;   // Number of vertices, edges
+int n, m, B;
 int *r_dist;
 static int dist[V * V];
 
@@ -36,6 +36,7 @@ void output(char *outFileName)
         fprintf(outfile, "\n");
     }
 }
+
 void init_device()
 {
     cudaSetDevice(1);
@@ -43,7 +44,7 @@ void init_device()
 
 int main(int argc, char* argv[])
 {
-    int B = atoi(argv[3]);
+    B = atoi(argv[3]);
     init_device();
 
     input(argv[1]);
@@ -53,56 +54,75 @@ int main(int argc, char* argv[])
     return 0;
 }
 
+void launch_cal(
+    int* device_dist, int iter,
+    int blk_start_x, int blk_start_y,
+    int blk_x_sz, int blk_y_sz)
+{
+    if (!blk_x_sz || !blk_y_sz) return;
+
+    dim3 block(blk_x_sz, blk_y_sz);
+    dim3 thread(B, B);
+    cal<<<block, thread>>>(device_dist, B, iter, blk_start_x, blk_start_y, n);
+}
+
 void block_FW(int B)
 {
-    int *d_dist;
+    float k_time;
+    cudaEvent_t start, stop;
+    int *device_dist;
+    int round = (n + B - 1) / B;
     ssize_t sz = sizeof(int) * n * n;
 
-    cudaMalloc(&d_dist, sz);
-    cudaMemcpy(d_dist, dist, sz, cudaMemcpyHostToDevice);
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaMalloc(&device_dist, sz);
+    cudaMemcpy(device_dist, dist, sz, cudaMemcpyHostToDevice);
     r_dist = (int*) malloc(sz);
 
-    cudaMemcpy(r_dist, d_dist, sz, cudaMemcpyDeviceToHost);
-    int round = (n + B - 1) / B;
+    cudaEventRecord(start, 0);
     for (int r = 0; r < round; ++r) {
         // phase1
-        cal<<<1, 1>>>(d_dist, B, r, r, r, n);
+        launch_cal(device_dist, r, r, r, 1, 1);
 
         // phase2
-        cal<<<1, r>>>(d_dist, B, r, r, 0, n);
-        cal<<<1, round - r - 1>>>(d_dist, B, r, r, r + 1, n);
-        cal<<<r, 1>>>(d_dist, B, r, 0, r, n);
-        cal<<<round - r - 1, 1>>>(d_dist, B, r, r + 1, r, n);
+        launch_cal(device_dist, r, r, 0, 1, r);
+        launch_cal(device_dist, r, r, r + 1, 1, round - r - 1);
+        launch_cal(device_dist, r, 0, r, r, 1);
+        launch_cal(device_dist, r, r + 1, r, round - r - 1, 1);
 
         // phase3
-        cal<<<r, r>>>(d_dist, B, r, 0, 0, n);
-        cal<<<r, round - r - 1>>>(d_dist, B, r, 0, r + 1, n);
-        cal<<<round - r - 1, r>>>(d_dist, B, r, r + 1, 0, n);
-        cal<<<round - r - 1, round - r - 1>>>(d_dist, B, r, r + 1, r + 1, n);
+        launch_cal(device_dist, r, 0, 0, r, r);
+        launch_cal(device_dist, r, 0, r + 1, r, round - r - 1);
+        launch_cal(device_dist, r, r + 1, 0, round - r - 1, r);
+        launch_cal(device_dist, r, r + 1, r + 1, round - r - 1, round - r - 1);
     }
-    cudaMemcpy(r_dist, d_dist, sz, cudaMemcpyDeviceToHost);
-    cudaFree(d_dist);
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&k_time, start, stop);
+    cudaMemcpy(r_dist, device_dist, sz, cudaMemcpyDeviceToHost);
+    cudaFree(device_dist);
+
+    fprintf (stderr, "k_time: %lf\n", k_time);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
 }
 
 __global__
 void cal(int* dist, int B, int Round, int block_start_x, int block_start_y, int n)
 {
-    // blockIdx.y
-    int b_i = blockIdx.x + block_start_x, b_j = threadIdx.x + block_start_y;
+    int b_i = blockIdx.x + block_start_x,
+        b_j = blockIdx.y + block_start_y;
+
+    int block_internal_start_x = b_i * B;
+    int block_internal_start_y = b_j * B;
+    int i = block_internal_start_x + threadIdx.x,
+        j = block_internal_start_y + threadIdx.y;
+    if (i > n) i = n;
+    if (j > n) j = n;
+
     for (int k = Round * B; k < (Round + 1) * B && k < n; ++k) {
-        int block_internal_start_x = b_i * B;
-        int block_internal_start_y = b_j * B;
-        int block_internal_end_x   = (b_i + 1) * B;
-        int block_internal_end_y   = (b_j + 1) * B;
-
-        if (block_internal_end_x > n)   block_internal_end_x = n;
-        if (block_internal_end_y > n)   block_internal_end_y = n;
-
-        for (int i = block_internal_start_x; i < block_internal_end_x; ++i) {
-            for (int j = block_internal_start_y; j < block_internal_end_y; ++j) {
-                if (dist[i * n + k] + dist[k * n + j] < dist[i * n + j])
-                    dist[i * n + j] = dist[i * n + k] + dist[k * n + j];
-            }
-        }
+        if (dist[i * n + k] + dist[k * n + j] < dist[i * n + j])
+            dist[i * n + j] = dist[i * n + k] + dist[k * n + j];
     }
 }

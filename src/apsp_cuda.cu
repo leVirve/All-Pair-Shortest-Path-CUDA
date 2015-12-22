@@ -112,14 +112,11 @@ __global__
 void cal(int* dist, int B, int Round, int block_start_x, int block_start_y, int n)
 {
     int b_i = blockIdx.x + block_start_x,
-        b_j = blockIdx.y + block_start_y;
-
-    int block_internal_start_x = b_i * B;
-    int block_internal_start_y = b_j * B;
-    int i = block_internal_start_x + threadIdx.x,
-        j = block_internal_start_y + threadIdx.y;
-    if (i > n) i = n;
-    if (j > n) j = n;
+        b_j = blockIdx.y + block_start_y,
+        i = b_i * B + threadIdx.x,
+        j = b_j * B + threadIdx.y;
+    if (i >= n) return;
+    if (j >= n) return;
 
     for (int k = Round * B; k < (Round + 1) * B && k < n; ++k) {
         if (dist[i * n + k] + dist[k * n + j] < dist[i * n + j])

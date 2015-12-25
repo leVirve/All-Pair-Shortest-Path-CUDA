@@ -111,15 +111,15 @@ void block_FW(int B)
 __global__
 void cal(int* dist, int B, int Round, int block_start_x, int block_start_y, int n)
 {
-    int b_i = blockIdx.x + block_start_x,
-        b_j = blockIdx.y + block_start_y,
-        i = b_i * B + threadIdx.x,
-        j = b_j * B + threadIdx.y;
+    int i = (blockIdx.x + block_start_x) * B + threadIdx.x,
+        j = (blockIdx.y + block_start_y) * B + threadIdx.y;
     if (i >= n) return;
     if (j >= n) return;
 
     for (int k = Round * B; k < (Round + 1) * B && k < n; ++k) {
-        if (dist[i * n + k] + dist[k * n + j] < dist[i * n + j])
-            dist[i * n + j] = dist[i * n + k] + dist[k * n + j];
+        int &dik = dist[i * n + k],
+            &dkj = dist[k * n + j],
+            &dij = dist[i * n + j];
+        if (dik + dkj < dij) dij = dik + dkj;
     }
 }

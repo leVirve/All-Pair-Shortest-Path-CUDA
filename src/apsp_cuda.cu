@@ -1,57 +1,29 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "utils.h"
 
-const int INF = 10000000;
-const int V = 10010;
-
-void block_FW(int B);
-__global__ void cal(int* d_dist, int B, int Round, int block_start_x, int block_start_y, int n);
-
-int n, m, B;
+int n, m, block_size;
 int *r_dist;
-static int dist[V * V];
 
-void input(char *inFileName)
+__global__
+void cal(int* dist, int block_size, int Round, int block_start_x, int block_start_y, int n)
 {
-    FILE *infile = fopen(inFileName, "r");
-    fscanf(infile, "%d %d", &n, &m);
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j) dist[i *n + j] = (i == j) ? 0 : INF;
-    while (--m >= 0) {
-        int a, b, v;
-        fscanf(infile, "%d %d %d", &a, &b, &v);
-        --a, --b;
-        dist[a * n + b] = v;
+    int x = threadIdx.x,
+        y = threadIdx.y,
+        i = (blockIdx.x + block_start_x) * block_size + x,
+        j = (blockIdx.y + block_start_y) * block_size + y;
+    if (i >= n) return;
+    if (j >= n) return;
+
+    __shared__ int shared_dist[32][32];
+    shared_dist[x][y] = (i < n && j < n) ? dist[i * n + j] : INF;
+
+    for (int k = Round * block_size; k < (Round + 1) * block_size && k < n; ++k) {
+        int &dik = dist[i * n + k],
+            &dkj = dist[k * n + j],
+            &dij = dist[i * n + j];
+        if (dik + dkj < dij) dij = dik + dkj;
     }
-}
-
-void output(char *outFileName)
-{
-    FILE *outfile = fopen(outFileName, "w");
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
-            if (r_dist[i * n + j] >= INF)  fprintf(outfile, "INF ");
-            else fprintf(outfile, "%d ", r_dist[i * n + j]);
-        }
-        fprintf(outfile, "\n");
-    }
-}
-
-void init_device()
-{
-    cudaSetDevice(1);
-}
-
-int main(int argc, char* argv[])
-{
-    B = atoi(argv[3]);
-    init_device();
-
-    input(argv[1]);
-    block_FW(B);
-    output(argv[2]);
-    free(r_dist);
-    return 0;
 }
 
 void launch_cal(
@@ -62,23 +34,29 @@ void launch_cal(
     if (!blk_x_sz || !blk_y_sz) return;
 
     dim3 block(blk_x_sz, blk_y_sz);
-    dim3 thread(B, B);
-    cal<<<block, thread>>>(device_dist, B, iter, blk_start_x, blk_start_y, n);
+    dim3 thread(block_size, block_size);
+    cal<<<block, thread>>>(device_dist, block_size, iter, blk_start_x, blk_start_y, n);
 }
 
-void block_FW(int B)
+void block_FW(int block_size)
 {
     float k_time;
-    cudaEvent_t start, stop;
-    int *device_dist;
-    int round = (n + B - 1) / B;
-    ssize_t sz = sizeof(int) * n * n;
 
+    int *device_dist;
+    int round = (n + block_size - 1) / block_size;
+    ssize_t sz = sizeof(int) * n * n;
+    cudaEvent_t start, stop;
+
+    cudaSetDevice(1);
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     cudaMalloc(&device_dist, sz);
     cudaMemcpy(device_dist, dist, sz, cudaMemcpyHostToDevice);
     r_dist = (int*) malloc(sz);
+
+    dim3 grid_phase1(1, 1);
+    dim3 grid_phase2(round, 2);
+    dim3 grid_phase3(round, round);
 
     cudaEventRecord(start, 0);
     for (int r = 0; r < round; ++r) {
@@ -108,18 +86,13 @@ void block_FW(int B)
     cudaEventDestroy(stop);
 }
 
-__global__
-void cal(int* dist, int B, int Round, int block_start_x, int block_start_y, int n)
+int main(int argc, char* argv[])
 {
-    int i = (blockIdx.x + block_start_x) * B + threadIdx.x,
-        j = (blockIdx.y + block_start_y) * B + threadIdx.y;
-    if (i >= n) return;
-    if (j >= n) return;
+    block_size = atoi(argv[3]);
 
-    for (int k = Round * B; k < (Round + 1) * B && k < n; ++k) {
-        int &dik = dist[i * n + k],
-            &dkj = dist[k * n + j],
-            &dij = dist[i * n + j];
-        if (dik + dkj < dij) dij = dik + dkj;
-    }
+    input(argv[1]);
+    block_FW(block_size);
+    output(argv[2]);
+    free(r_dist);
+    return 0;
 }

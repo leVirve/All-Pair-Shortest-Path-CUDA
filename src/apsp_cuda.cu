@@ -8,34 +8,6 @@ int n, m, block_size;
 int *r_dist;
 
 __global__
-void cal(int* dist, int block_size, int Round, int block_start_x, int block_start_y, int n)
-{
-    int i = (blockIdx.x + block_start_x) * block_size + threadIdx.x,
-        j = (blockIdx.y + block_start_y) * block_size + threadIdx.y;
-    if (i >= n) return;
-    if (j >= n) return;
-
-    for (int k = Round * block_size; k < (Round + 1) * block_size && k < n; ++k) {
-        int &dik = dist[i * n + k],
-            &dkj = dist[k * n + j],
-            &dij = dist[i * n + j];
-        if (dik + dkj < dij) dij = dik + dkj;
-    }
-}
-
-void launch_cal(
-    int* device_dist, int iter,
-    int blk_start_x, int blk_start_y,
-    int blk_x_sz, int blk_y_sz)
-{
-    if (!blk_x_sz || !blk_y_sz) return;
-
-    dim3 block(blk_x_sz, blk_y_sz);
-    dim3 thread(block_size, block_size);
-    cal<<<block, thread>>>(device_dist, block_size, iter, blk_start_x, blk_start_y, n);
-}
-
-__global__
 void kernel_phase1(int round, int n, int* dist)
 {
     __shared__ int shared_dist[BLOCK_SIZE][BLOCK_SIZE];
@@ -48,6 +20,7 @@ void kernel_phase1(int round, int n, int* dist)
     shared_dist[x][y] = (i < n && j < n) ? dist[i * n + j] : INF;
     __syncthreads();
 
+    #pragma unroll
     for (int k = 0; k < BLOCK_SIZE; ++k) {
         int tmp = shared_dist[x][k] + shared_dist[k][y];
         if (tmp < shared_dist[x][y]) shared_dist[x][y] = tmp;
@@ -80,11 +53,13 @@ void kernel_phase2(int round, int n, int* dist)
     __syncthreads();
 
     if (blockIdx.y == 1) {
+        #pragma unroll
         for (int k = 0; k < BLOCK_SIZE; ++k) {
             int tmp = shared_dist[x][k] + shared_pivot[k][y];
             if (tmp < shared_dist[x][y]) shared_dist[x][y] = tmp;
         }
     } else {
+        #pragma unroll
         for (int k = 0; k < BLOCK_SIZE; ++k) {
             int tmp = shared_pivot[x][k] + shared_dist[k][y];
             if (tmp < shared_dist[x][y]) shared_dist[x][y] = tmp;
@@ -109,29 +84,18 @@ void kernel_phase3(int round, int n, int* dist)
         i_col = y + round * BLOCK_SIZE,
         j_row = x + round * BLOCK_SIZE;
 
-#ifdef PLAIN_MEM
-    if (i >= n) return;
-    if (j >= n) return;
-
-    for (int k = round * BLOCK_SIZE; k < (round + 1) * BLOCK_SIZE && k < n; ++k) {
-        int &dik = dist[i * n + k],
-            &dkj = dist[k * n + j],
-            &dij = dist[i * n + j];
-        if (dik + dkj < dij) dij = dik + dkj;
-    }
-#else
     shared_pivot_row[x][y] = (i < n && i_col < n) ? dist[i * n + i_col] : INF;
     shared_pivot_col[x][y] = (j < n && j_row < n) ? dist[j_row * n + j] : INF;
     __syncthreads();
 
     if (i >= n || j >= n) return;
     int dij = dist[i * n + j];
+    #pragma unroll
     for (int k = 0; k < BLOCK_SIZE; ++k) {
         int tmp = shared_pivot_row[x][k] + shared_pivot_col[k][y];
-       if (tmp < dij) dij = tmp;
+        if (tmp < dij) dij = tmp;
     }
     dist[i * n + j] = dij;
-#endif
 }
 
 void block_FW(int block_size)
@@ -161,14 +125,7 @@ void block_FW(int block_size)
 
         kernel_phase2<<<grid_phase2, block>>>(r, n, device_dist);
 
-#ifdef PLAIN_MEM
-        launch_cal(device_dist, r, 0, 0, r, r);
-        launch_cal(device_dist, r, 0, r + 1, r, round - r - 1);
-        launch_cal(device_dist, r, r + 1, 0, round - r - 1, r);
-        launch_cal(device_dist, r, r + 1, r + 1, round - r - 1, round - r - 1);
-#else
         kernel_phase3<<<grid_phase3, block>>>(r, n, device_dist);
-#endif
     }
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);

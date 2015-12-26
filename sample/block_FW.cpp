@@ -53,7 +53,7 @@ void output(char *outFileName)
 			else					fprintf(outfile, "%d ", Dist[i][j]);
 		}
 		fprintf(outfile, "\n");
-	}		
+	}
 }
 
 int ceil(int a, int b)
@@ -96,7 +96,7 @@ void cal(int B, int Round, int block_start_x, int block_start_y, int block_width
 				// For instance, original index of (0,0) in block (1,2) is (2,5) for V=6,B=2
 				int block_internal_start_x = b_i * B;
 				int block_internal_end_x   = (b_i +1) * B;
-				int block_internal_start_y = b_j * B; 
+				int block_internal_start_y = b_j * B;
 				int block_internal_end_y   = (b_j +1) * B;
 
 				if (block_internal_end_x > n)	block_internal_end_x = n;

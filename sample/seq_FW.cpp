@@ -50,7 +50,7 @@ void output(char *outFileName)
 			else					fprintf(outfile, "%d ", Dist[i][j]);
 		}
 		fprintf(outfile, "\n");
-	}		
+	}
 }
 
 void seq_FW()

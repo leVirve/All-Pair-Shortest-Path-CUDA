@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #define BLOCK_SIZE 32
+// TODO: variable block size
 
 int n, m, block_size;
 int *r_dist;
@@ -141,7 +142,7 @@ void block_FW(int block_size)
 int main(int argc, char* argv[])
 {
     block_size = atoi(argv[3]);
-
+    
     input(argv[1]);
     block_FW(block_size);
     output(argv[2]);

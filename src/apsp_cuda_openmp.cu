@@ -102,6 +102,16 @@ void kernel_phase3(int round, int n, int* dist, int offset_lines)
     dist[i * n + j] = dij;
 }
 
+__global__
+void kernel_swap(int* device_dist, int* swap_dist, int offset_lines, int n)
+{
+    if (blockIdx.x < offset_lines) return;
+
+    int line = blockIdx.x;
+    for (int j = 0; j < n; ++j)
+        device_dist[line * n + j] = swap_dist[line * n + j];
+}
+
 void block_FW(int block_size)
 {
     float k_time;
@@ -118,14 +128,18 @@ void block_FW(int block_size)
     dim3 grid_phase3((round + num_gpus - 1) / num_gpus, round);
     dim3 block(block_size, block_size);
 
-    int *device_dist;
-    cudaMallocHost(&device_dist, sz);
-    cudaMemcpy(device_dist, dist, sz, cudaMemcpyHostToHost);
-    r_dist = device_dist;
+    int *device_dist[num_gpus], *swap_dist;
+
     #pragma omp parallel
     {
         unsigned int thread_id = omp_get_thread_num();
         cudaSetDevice(thread_id);
+
+        cudaMalloc(&device_dist[thread_id], sz);
+        if (thread_id == 0) {
+            cudaMalloc(&swap_dist, sz); 
+            cudaMemcpy(device_dist[0], dist, sz, cudaMemcpyHostToDevice);
+        }
 
         cudaEvent_t start, stop;
         cudaEventCreate(&start);
@@ -133,17 +147,23 @@ void block_FW(int block_size)
         cudaEventRecord(start, 0);
         for (int r = 0; r < round; ++r) {
             if (thread_id == 0) {
-            kernel_phase1<<<grid_phase1, block>>>(r, n, device_dist);
-
-            kernel_phase2<<<grid_phase2, block>>>(r, n, device_dist);
-            cudaStreamSynchronize(0);
+                kernel_phase1<<<grid_phase1, block>>>(r, n, device_dist[thread_id]);
+                kernel_phase2<<<grid_phase2, block>>>(r, n, device_dist[thread_id]);
+                cudaMemcpy(device_dist[1], device_dist[0], sz, cudaMemcpyDefault);
+                cudaStreamSynchronize(0);
             }
 
             #pragma omp barrier
 
-            kernel_phase3<<<grid_phase3, block>>>(r, n, device_dist, thread_id * (round+1) / 2);
-
+            kernel_phase3<<<grid_phase3, block>>>(r, n, device_dist[thread_id], thread_id * (round + 1) / num_gpus);
             cudaStreamSynchronize(0);
+
+            if (thread_id == 0) {
+                cudaMemcpy(swap_dist, device_dist[1], sz, cudaMemcpyDefault);
+                kernel_swap<<<n, 1>>>(device_dist[thread_id], swap_dist, BLOCK_SIZE * ((round + 1) / num_gpus), n);
+                cudaStreamSynchronize(0);
+            }
+
             #pragma omp barrier
         }
         cudaEventRecord(stop, 0);
@@ -153,6 +173,8 @@ void block_FW(int block_size)
         cudaEventDestroy(start);
         cudaEventDestroy(stop);
     }
+    cudaMemcpy(dist, device_dist[0], sz, cudaMemcpyDeviceToHost);
+    r_dist = dist;
 }
 
 int main(int argc, char* argv[])
@@ -162,6 +184,5 @@ int main(int argc, char* argv[])
     input(argv[1]);
     block_FW(block_size);
     output(argv[2]);
-    cudaFreeHost(r_dist);
     return 0;
 }

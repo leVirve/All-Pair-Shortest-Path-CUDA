@@ -18,7 +18,7 @@ seq_FW.exe: ./sample/seq_FW.cpp
 	$(CC) $(CCFLAGS) -o seq_FW.exe ./sample/seq_FW.cpp
 
 HW4_cuda.exe: ./src/apsp_cuda.cu
-	$(NVCC) $(NVFLAGS) -o HW4_cuda.exe ./src/apsp_cuda.cu
+	$(NVCC) $(NVFLAGS) -Xcompiler="$(OMPFLAGS)" -o HW4_cuda.exe ./src/apsp_cuda.cu
 
 HW4_openmp.exe: ./src/apsp_cuda_openmp.cu
 	$(NVCC) $(NVFLAGS) -Xcompiler="$(OMPFLAGS)" -o HW4_openmp.exe ./src/apsp_cuda_openmp.cu
@@ -27,5 +27,8 @@ HW4_mpi.exe: ./src/apsp_cuda_mpi.cu
 	$(NVCC) $(NVFLAGS) $(MPILIBS) -o HW4_mpi.exe ./src/apsp_cuda_mpi.cu
 
 test:
-	./HW4_openmp.exe testcase/in$(c) t1 32
+	mpirun -np 2 ./HW4_mpi.exe testcase/in$(c) t1 $(s)
 	cmp testcase/ans$(c) t1
+
+cuda: ./src/cuda_imp.cu
+	$(NVCC) $(NVFLAGS) -Xcompiler="$(OMPFLAGS)" -o cuda.exe ./src/cuda_imp.cu

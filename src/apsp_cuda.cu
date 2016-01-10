@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <omp.h> // for omp_get_wtime
 #include "utils.h"
 
 int n, m, block_size;
@@ -10,8 +11,8 @@ void kernel_phase1(int round, int n, int* dist, int bsz)
 {
     extern __shared__ int shared_dist[];
 
-    int x = threadIdx.x,
-        y = threadIdx.y,
+    int y = threadIdx.x,
+        x = threadIdx.y,
         i = x + round * bsz,
         j = y + round * bsz;
 
@@ -37,8 +38,8 @@ void kernel_phase2(int round, int n, int* dist, int bsz)
     int* shared_pivot = &shared_mem[0];
     int* shared_dist = &shared_mem[bsz * bsz];
 
-    int x = threadIdx.x,
-        y = threadIdx.y,
+    int y = threadIdx.x,
+        x = threadIdx.y,
         i = x + round * bsz,
         j = y + round * bsz;
 
@@ -79,8 +80,8 @@ void kernel_phase3(int round, int n, int* dist, int bsz)
     int* shared_pivot_row = &shared_mem[0];
     int* shared_pivot_col = &shared_mem[bsz * bsz];
 
-    int x = threadIdx.x,
-        y = threadIdx.y,
+    int y = threadIdx.x,
+        x = threadIdx.y,
         i = x + blockIdx.x * blockDim.x,
         j = y + blockIdx.y * blockDim.y,
         i_col = y + round * bsz,
@@ -112,8 +113,10 @@ void block_FW(int block_size)
     cudaSetDevice(1);
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
+
     cudaMalloc(&device_dist, sz);
-    cudaMemcpy(device_dist, dist, sz, cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(device_dist, dist, sz, cudaMemcpyHostToDevice);
+
     r_dist = (int*) malloc(sz);
 
     dim3 grid_phase1(1, 1);
@@ -132,10 +135,10 @@ void block_FW(int block_size)
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&k_time, start, stop);
-    cudaMemcpy(r_dist, device_dist, sz, cudaMemcpyDeviceToHost);
-    cudaFree(device_dist);
 
-    fprintf (stderr, "k_time: %lf\n", k_time);
+    cudaMemcpy(r_dist, device_dist, sz, cudaMemcpyDeviceToHost);
+    fprintf (stderr, "k_time: %lf ms\n", k_time);\
+    cudaFree(device_dist);
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
 }
@@ -144,9 +147,17 @@ int main(int argc, char* argv[])
 {
     block_size = atoi(argv[3]);
 
+    double io_time = 0, s = omp_get_wtime();
     input(argv[1]);
+    io_time += omp_get_wtime() - s;
+
     block_FW(block_size);
+
+    s = omp_get_wtime();
     output(argv[2]);
+    io_time += omp_get_wtime() - s;
+    printf("io_time: %lf sec\n", io_time);
+
     free(r_dist);
     return 0;
 }

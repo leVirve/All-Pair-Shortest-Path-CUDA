@@ -12,8 +12,8 @@ void kernel_phase1(int round, int n, int* dist, int bsz)
 {
     extern __shared__ int shared_dist[];
 
-    int x = threadIdx.x,
-        y = threadIdx.y,
+    int y = threadIdx.x,
+        x = threadIdx.y,
         i = x + round * bsz,
         j = y + round * bsz;
 
@@ -39,8 +39,8 @@ void kernel_phase2(int round, int n, int* dist, int bsz)
     int* shared_pivot = &shared_mem[0];
     int* shared_dist = &shared_mem[bsz * bsz];
 
-    int x = threadIdx.x,
-        y = threadIdx.y,
+    int y = threadIdx.x,
+        x = threadIdx.y,
         i = x + round * bsz,
         j = y + round * bsz;
 
@@ -83,8 +83,8 @@ void kernel_phase3(int round, int n, int* dist, int bsz, int offset_lines)
     int* shared_pivot_row = &shared_mem[0];
     int* shared_pivot_col = &shared_mem[bsz * bsz];
 
-    int x = threadIdx.x,
-        y = threadIdx.y,
+    int y = threadIdx.x,
+        x = threadIdx.y,
         i = x + blockIdx_x * blockDim.x,
         j = y + blockIdx_y * blockDim.y,
         i_col = y + round * bsz,
@@ -118,6 +118,7 @@ void block_FW(int block_size)
 {
     MPI_Status status;
     float k_time;
+    double comm_time = 0, s;
 
     int round = (n + block_size - 1) / block_size;
     int offset_blks = (round + world_size - 1) / world_size;
@@ -150,10 +151,14 @@ void block_FW(int block_size)
             cudaStreamSynchronize(0);
             if (round > offset_blks) {
                 cudaMemcpy(buffer, device_dist, sz, cudaMemcpyDeviceToHost);
+                s = MPI_Wtime();
                 MPI_Send(buffer, sz, MPI_CHAR, 1, 0, MPI_COMM_WORLD);
+                comm_time += MPI_Wtime() - s;
             }
         } else if (rank == 1 && round > offset_blks) {
+            s = MPI_Wtime();
             MPI_Recv(buffer, sz, MPI_CHAR, 0, 0, MPI_COMM_WORLD, &status);
+            comm_time += MPI_Wtime() - s;
             cudaMemcpy(device_dist, buffer, sz, cudaMemcpyHostToDevice);
         }
 
@@ -162,19 +167,24 @@ void block_FW(int block_size)
         cudaStreamSynchronize(0);
 
         if (rank == 0 && round > offset_blks) {
+            s = MPI_Wtime();
             MPI_Recv(buffer, sz, MPI_CHAR, 1, 0, MPI_COMM_WORLD, &status);
+            comm_time += MPI_Wtime() - s;
             cudaMemcpy(swap_dist, buffer, sz, cudaMemcpyHostToDevice);
             kernel_swap<<<n, 1>>>(device_dist, swap_dist, block_size * offset_blks, n);
             cudaStreamSynchronize(0);
         } else if (rank == 1 && round > offset_blks) {
             cudaMemcpy(buffer, device_dist, sz, cudaMemcpyDeviceToHost);
+            s = MPI_Wtime();
             MPI_Send(buffer, sz, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+            comm_time += MPI_Wtime() - s;
         }
     }
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&k_time, start, stop);
     fprintf (stderr, "k_time: %lf\n", k_time);
+    fprintf (stderr, "comm_time: %lf\n", comm_time);
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
 

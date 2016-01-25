@@ -107,11 +107,13 @@ void kernel_phase3(int round, int n, int* dist, int bsz, int offset_lines)
 __global__
 void kernel_swap(int* device_dist, int* swap_dist, int offset_lines, int n)
 {
-    if (blockIdx.x < offset_lines) return;
-
-    int line = blockIdx.x;
-    for (int j = 0; j < n; ++j)
-        device_dist[line * n + j] = swap_dist[line * n + j];
+    int blockIdx_x = blockIdx.x + offset_lines;
+    int y = threadIdx.x,
+        x = threadIdx.y,
+        i = x + blockIdx_x * blockDim.x,
+        j = y + blockIdx.y * blockDim.y;
+    if (i >= n || j >= n) return;
+    device_dist[i * n + j] = swap_dist[i * n + j];
 }
 
 void block_FW(int block_size)
@@ -171,7 +173,7 @@ void block_FW(int block_size)
             MPI_Recv(buffer, sz, MPI_CHAR, 1, 0, MPI_COMM_WORLD, &status);
             comm_time += MPI_Wtime() - s;
             cudaMemcpy(swap_dist, buffer, sz, cudaMemcpyHostToDevice);
-            kernel_swap<<<n, 1>>>(device_dist, swap_dist, block_size * offset_blks, n);
+            kernel_swap<<<grid_phase3, block>>>(device_dist, swap_dist, offset_blks, n);
             cudaStreamSynchronize(0);
         } else if (rank == 1 && round > offset_blks) {
             cudaMemcpy(buffer, device_dist, sz, cudaMemcpyDeviceToHost);

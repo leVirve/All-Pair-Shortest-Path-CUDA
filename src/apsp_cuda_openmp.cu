@@ -106,11 +106,13 @@ void kernel_phase3(int round, int n, int* dist, int bsz, int offset_lines)
 __global__
 void kernel_swap(int* device_dist, int* swap_dist, int offset_lines, int n)
 {
-    if (blockIdx.x < offset_lines) return;
-
-    int line = blockIdx.x;
-    for (int j = 0; j < n; ++j)
-        device_dist[line * n + j] = swap_dist[line * n + j];
+    int blockIdx_x = blockIdx.x + offset_lines;
+    int y = threadIdx.x,
+        x = threadIdx.y,
+        i = x + blockIdx_x * blockDim.x,
+        j = y + blockIdx.y * blockDim.y;
+    if (i >= n || j >= n) return;
+    device_dist[i * n + j] = swap_dist[i * n + j];
 }
 
 void block_FW(int block_size)
@@ -185,7 +187,7 @@ void block_FW(int block_size)
                 cudaEventSynchronize(stop);
                 cudaEventElapsedTime(&tmp, start, stop);
                 m_time += tmp;
-                kernel_swap<<<n, 1>>>(dev_dist[0], swap_dist, block_size * offset_blks, n);
+                kernel_swap<<<grid_phase3, block>>>(dev_dist[0], swap_dist, offset_blks, n);
                 cudaStreamSynchronize(0);
             }
         }

@@ -8,10 +8,11 @@
 const int INF = 10000000;
 const int V = 10010;
 extern int n, m, *r_dist;;
-static int dist[V * V];
+static int* dist;
 
 void input(char *inFileName)
 {
+    cudaMallocHost(&dist, V * V * sizeof(int));
     FILE *infile = fopen(inFileName, "r");
     fscanf(infile, "%d %d", &n, &m);
     for (int i = 0; i < n; ++i)
@@ -34,4 +35,5 @@ void output(char *outFileName)
         }
         fprintf(outfile, "\n");
     }
+    cudaFreeHost(dist);
 }

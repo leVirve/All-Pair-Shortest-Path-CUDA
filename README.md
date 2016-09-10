@@ -1,36 +1,19 @@
-*Parallel Programming 2015 HW4 shared materials*
+# All Pair Shortest Path parallel in CUDA
 
-1. Makefile:
-- modify this file to meet your requirements
+Implement parallel OAll Pair Shortest Path with `MPI` and `OpenMP`.
 
-# Make everything:
-`> make -j
+## Experiment System Spec
 
-# Clean executables
-`> make clean
+**Clusters:**
+- node 1:
+    - Intel Xeon CPU L5640 @2.27GHz (2x6-cores)
+    - NVIDIA Tesla K20m (5G GDDR5) x2
+- node2 and node3:
+    - Intel Xeon CPU X5670 @2.93GHz (2x6-cores)
+    - NVIDIA Tesla M2090 (6G GDDR5) x2
 
-# Compile an executable (say `HW4_cuda.exe`):
-`> make HW4_cuda.exe
+- Network: connectd by 1000M Gigabit `Ethernet`
 
+## Report
 
-2. Sample code provided:
-- seq_FW.cpp
-    *  Single-threaded implementation of original FW algorithm
-
-- block_FW.cpp
-    *  Single-threaded CPU implementation of blocked FW algorithm
-    *  Code has been partition into functions to ease your implementation in CUDA
-
-3. hostfile:
-- The -hostfile option to mpirun takes a filename that lists hosts on which to launch MPI processes.
-- For example:
-> mpirun -np 4 -hostfile hostfile ./myProgram
-
-- Example of a hostfile: (this will assign rank 0-1 on gpucluster1, rank 2-3 on gpucluster2)
-> gpucluster1:2
-> gpucluster2:2
-`
-
-if you have any question, please ask on [iLMS](http://lms.nthu.edu.tw) or email [TA](jacoblee@lsalab.cs.nthu.edu.tw)
-Thanks!
-
+- refer the [report](report/report.pdf)

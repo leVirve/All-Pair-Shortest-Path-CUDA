@@ -26,7 +26,3 @@
 *.exe
 *.out
 *.app
-
-# Testcases
-testcase/
-
